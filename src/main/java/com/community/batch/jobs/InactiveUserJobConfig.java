@@ -12,15 +12,24 @@ import org.springframework.batch.core.configuration.annotation.StepBuilderFactor
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.database.JpaItemWriter;
+import org.springframework.batch.item.database.JpaPagingItemReader;
+import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import javax.persistence.EntityManagerFactory;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @AllArgsConstructor
 @Configuration
 public class InactiveUserJobConfig {
+
+    private final static int CHUNK_SIZE = 15;
+    private final EntityManagerFactory entityManagerFactory; // 트랜잭션 관리.
 
     private UserRepository userRepository;
 
@@ -34,21 +43,54 @@ public class InactiveUserJobConfig {
     }
 
     @Bean
-    public Step inactiveJobStep(StepBuilderFactory stepBuilderFactory) {
+    public Step inactiveJobStep(StepBuilderFactory stepBuilderFactory,
+                                JpaPagingItemReader<User> inactiveUserJpaReader) {
         return stepBuilderFactory.get("inactiveUserStep")
-                .<User, User> chunk(10)
-                .reader(inactiveUserReader())
+                .<User, User> chunk(CHUNK_SIZE)
+                .reader(inactiveUserJpaReader)
                 .processor(inactiveUserProcessor())
                 .writer(inactiveUserWriter())
                 .build();
     }
 
-    @Bean
+/*    @Bean
     @StepScope
     public QueueItemReader<User> inactiveUserReader() {
         List<User> oldUsers = userRepository.findByUpdatedDateBeforeAndStatusEquals(
                 LocalDateTime.now().minusYears(1), UserStatus.ACTIVE);
         return new QueueItemReader<>(oldUsers);
+    }
+
+    @Bean
+    @StepScope
+    public ListItemReader<User> inactiveUserReader() {
+        List<User> oldUsers = userRepository.findByUpdatedDateBeforeAndStatusEquals(
+                LocalDateTime.now().minusYears(1), UserStatus.ACTIVE);
+        return new ListItemReader<>(oldUsers);
+    }
+*/
+
+    @Bean(destroyMethod = "")
+    @StepScope
+    public JpaPagingItemReader<User> inactiveUserJpaReader() {
+        JpaPagingItemReader<User> jpaPagingItemReader = new JpaPagingItemReader() {
+            @Override
+            public int getPage() {
+                return 0;
+            }
+        };
+        jpaPagingItemReader.setQueryString("select u from User as u where u.updatedDate < :updatedDate and u.status = :status");
+
+        Map<String, Object> map = new HashMap<>();
+        LocalDateTime now = LocalDateTime.now();
+        map.put("updatedDate", now.minusYears(1));
+        map.put("status", UserStatus.ACTIVE);
+
+        jpaPagingItemReader.setParameterValues(map);
+        jpaPagingItemReader.setEntityManagerFactory(entityManagerFactory);
+        jpaPagingItemReader.setPageSize(CHUNK_SIZE);
+
+        return jpaPagingItemReader;
     }
 
     public ItemProcessor<User, User> inactiveUserProcessor() {
@@ -61,7 +103,13 @@ public class InactiveUserJobConfig {
         };*/
     }
 
-    public ItemWriter<User> inactiveUserWriter() {
+/*    public ItemWriter<User> inactiveUserWriter() {
         return ((List<? extends User> users) -> userRepository.saveAll(users));
+    }*/
+
+    private JpaItemWriter<User> inactiveUserWriter() {
+        JpaItemWriter<User> jpaItemWriter = new JpaItemWriter<>();
+        jpaItemWriter.setEntityManagerFactory(entityManagerFactory);
+        return jpaItemWriter;
     }
 }

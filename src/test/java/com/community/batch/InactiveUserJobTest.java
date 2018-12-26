@@ -36,7 +36,7 @@ public class InactiveUserJobTest {
         JobExecution jobExecution = jobLauncherTestUtils.launchJob(new JobParametersBuilder().addDate("nowDate", nowDate).toJobParameters());
 
         assertEquals(BatchStatus.COMPLETED, jobExecution.getStatus());
-        assertEquals(11, userRepository.findAll().size());
+        assertEquals(22, userRepository.findAll().size());
         assertEquals(0, userRepository.findByUpdatedDateBeforeAndStatusEquals(
                 LocalDateTime.now().minusYears(1), UserStatus.ACTIVE).size());
     }
